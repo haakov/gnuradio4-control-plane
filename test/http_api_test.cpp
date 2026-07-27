@@ -55,7 +55,7 @@ public:
                 .canonical_type = std::nullopt,
                 .name = "Add<float32>",
                 .category = "Math",
-                .summary = "Adds two float streams",
+                .summary = std::string(4096U, 'A'),
                 .inputs = {[] {
                     gr4cp::domain::BlockPortDescriptor port;
                     port.name = "in";
@@ -967,7 +967,7 @@ TEST_F(HttpApiTest, GetBlocksSuccess) {
     EXPECT_TRUE(body[0]["parameters"].is_array());
 }
 
-TEST_F(HttpApiTest, GetBlocksDoesNotAdvertiseCompressedBodyAfterProxyDecompression) {
+TEST_F(HttpApiTest, GetBlocksDoesNotAdvertiseContentEncodingForIdentityBody) {
     const httplib::Headers headers{{"Accept-Encoding", "br, gzip, deflate"}};
     const auto response = client->Get("/blocks", headers);
 

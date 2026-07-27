@@ -787,7 +787,15 @@ struct gr4cp::api::HttpServer::Impl {
             }
 
             std::lock_guard lock(connection_mutex_);
-            connection_threads_.emplace_back([this, socket = std::move(socket)]() mutable { handle_connection(std::move(socket)); });
+            connection_threads_.emplace_back([this, socket = std::move(socket)]() mutable {
+                try {
+                    handle_connection(std::move(socket));
+                } catch (const std::exception& exception) {
+                    std::cerr << "gr4cp_server: unhandled exception in HTTP connection worker: " << exception.what() << '\n';
+                } catch (...) {
+                    std::cerr << "gr4cp_server: unknown exception in HTTP connection worker\n";
+                }
+            });
         }
 
         join_connection_threads();
@@ -892,7 +900,13 @@ private:
         client.set_connection_timeout(1, 0);
         client.set_read_timeout(kInternalRouteReadTimeout.count(), 0);
         client.set_keep_alive(false);
-        const auto headers = to_httplib_headers(request.base());
+        // The public Beast endpoint owns content negotiation. If cpp-httplib
+        // advertises compression for this internal hop, it transparently
+        // decompresses the body but leaves Content-Encoding on the response.
+        // Forwarding that stale header makes browsers decode the JSON twice.
+        client.set_decompress(false);
+        auto headers = to_httplib_headers(request.base());
+        headers.emplace("Accept-Encoding", "identity");
         const auto path = std::string(request.target());
         proxy_debug("public_path=" + path + " internal_route=http://127.0.0.1:" + std::to_string(internal_port_) + path);
 
