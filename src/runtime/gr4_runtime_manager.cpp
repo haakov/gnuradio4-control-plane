@@ -306,7 +306,7 @@ std::string next_request_id() {
     return std::format("req_{:016x}", distribution(generator));
 }
 
-std::optional<std::string> value_to_string(const gr::pmt::Value& value) {
+std::optional<std::string> value_as_string(const gr::pmt::Value& value) {
     std::optional<std::string> result;
     gr::pmt::ValueVisitor([&result](const auto& item) {
         using T = std::decay_t<decltype(item)>;
@@ -331,7 +331,7 @@ std::string describe_runtime_block(const std::shared_ptr<gr::BlockModel>& block)
     }
 
     if (const auto& settings = block->settings().get(); settings.contains("name")) {
-        if (const auto settings_name = value_to_string(settings.at("name")); settings_name.has_value() && !settings_name->empty() &&
+        if (const auto settings_name = value_as_string(settings.at("name")); settings_name.has_value() && !settings_name->empty() &&
                                                                            *settings_name != std::string(block->uniqueName()) &&
                                                                            *settings_name != std::string(block->name())) {
             description += std::format(" [settings.name={}]", *settings_name);
@@ -382,7 +382,7 @@ std::shared_ptr<gr::BlockModel> resolve_runtime_block(const gr::BlockModel& root
         if (!settings.contains("name")) {
             continue;
         }
-        const auto settings_name = value_to_string(settings.at("name"));
+        const auto settings_name = value_as_string(settings.at("name"));
         if (settings_name.has_value() && *settings_name == requested_block_target) {
             return block;
         }
@@ -394,18 +394,18 @@ std::shared_ptr<gr::BlockModel> resolve_runtime_block(const gr::BlockModel& root
 void normalize_block(gr::property_map& block) {
     std::optional<std::string> studio_node_id;
     if (const auto it = block.find("id"); it != block.end()) {
-        studio_node_id = value_to_string(it->second);
+        studio_node_id = value_as_string(it->second);
     }
 
     if (const auto it = block.find("block"); it != block.end()) {
-        if (const auto block_type = value_to_string(it->second); block_type.has_value() && !block_type->empty()) {
+        if (const auto block_type = value_as_string(it->second); block_type.has_value() && !block_type->empty()) {
             block["id"] = *block_type;
         }
     }
 
     if (!block.contains("id")) {
         if (const auto it = block.find("block_type"); it != block.end()) {
-            if (const auto block_type = value_to_string(it->second); block_type.has_value() && !block_type->empty()) {
+            if (const auto block_type = value_as_string(it->second); block_type.has_value() && !block_type->empty()) {
                 block["id"] = *block_type;
             }
         }
@@ -444,7 +444,7 @@ void normalize_block(gr::property_map& block) {
             if (it == block.end()) {
                 continue;
             }
-            if (const auto name = value_to_string(it->second); name.has_value() && !name->empty()) {
+            if (const auto name = value_as_string(it->second); name.has_value() && !name->empty()) {
                 parameters["name"] = *name;
                 needs_parameters_write = true;
                 break;
@@ -478,7 +478,7 @@ bool normalize_connection(gr::pmt::Value& connection) {
         bool changed = false;
         if (sequence->size() >= 4) {
             for (const std::size_t index : {std::size_t{1}, std::size_t{3}}) {
-                if (const auto token = value_to_string((*sequence)[index]); token.has_value()) {
+                if (const auto token = value_as_string((*sequence)[index]); token.has_value()) {
                     const auto normalized = normalize_port(*token);
                     changed = changed || (normalized != (*sequence)[index]);
                     (*sequence)[index] = normalized;
@@ -498,7 +498,7 @@ bool normalize_connection(gr::pmt::Value& connection) {
         if (it == map->end()) {
             return std::nullopt;
         }
-        return value_to_string(it->second);
+        return value_as_string(it->second);
     };
 
     const auto source_block = get_required_string("source_block");
@@ -550,11 +550,11 @@ bool inject_stream_bindings(gr::property_map& root, const std::vector<domain::Ru
 
         std::optional<std::string> name;
         if (const auto name_it = parameters.find("name"); name_it != parameters.end()) {
-            name = value_to_string(name_it->second);
+            name = value_as_string(name_it->second);
         }
         if (!name.has_value() || name->empty()) {
             if (const auto instance_it = block->find("instance_name"); instance_it != block->end()) {
-                name = value_to_string(instance_it->second);
+                name = value_as_string(instance_it->second);
             }
         }
         if (!name.has_value() || name->empty()) {
