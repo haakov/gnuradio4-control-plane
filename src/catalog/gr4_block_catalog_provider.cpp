@@ -333,7 +333,7 @@ std::string derive_name_from_id(const std::string& id) {
     return to_title_case(raw_name);
 }
 
-std::optional<std::string> value_to_string(const gr::pmt::Value& value) {
+std::optional<std::string> value_as_string(const gr::pmt::Value& value) {
     std::optional<std::string> result;
     gr::pmt::ValueVisitor([&result](const auto& item) {
         using T = std::decay_t<decltype(item)>;
@@ -357,7 +357,7 @@ std::optional<gr::property_map> value_to_map(const gr::pmt::Value& value) {
     return result;
 }
 
-std::optional<std::vector<std::string>> value_to_string_list(const gr::pmt::Value& value) {
+std::optional<std::vector<std::string>> value_as_string_list(const gr::pmt::Value& value) {
     std::optional<std::vector<std::string>> result;
     gr::pmt::ValueVisitor([&result](const auto& item) {
         using T = std::decay_t<decltype(item)>;
@@ -372,7 +372,7 @@ std::optional<std::vector<std::string>> value_to_string_list(const gr::pmt::Valu
             std::vector<std::string> values;
             values.reserve(item.size());
             for (const auto& entry : item) {
-                const auto string_value = value_to_string(entry);
+                const auto string_value = value_as_string(entry);
                 if (!string_value.has_value()) {
                     return;
                 }
@@ -422,7 +422,7 @@ std::optional<std::string> parameter_meta_string(const gr::property_map& meta,
     if (it == meta.end()) {
         return std::nullopt;
     }
-    return value_to_string(it->second);
+    return value_as_string(it->second);
 }
 
 std::optional<std::vector<std::string>> parameter_meta_string_list(const gr::property_map& meta,
@@ -432,7 +432,7 @@ std::optional<std::vector<std::string>> parameter_meta_string_list(const gr::pro
     if (it == meta.end()) {
         return std::nullopt;
     }
-    return value_to_string_list(it->second);
+    return value_as_string_list(it->second);
 }
 
 std::string parameter_type_name(const gr::pmt::Value& value) {
@@ -1220,7 +1220,7 @@ std::string derive_category_from_metadata(const gr::property_map& meta, std::str
         if (drawable_info.has_value()) {
             const auto category = drawable_info->find("Category");
             if (category != drawable_info->end()) {
-                if (const auto value = value_to_string(category->second); value.has_value() && !value->empty()) {
+                if (const auto value = value_as_string(category->second); value.has_value() && !value->empty()) {
                     if (is_sane_explicit_category(*value)) {
                         return *value;
                     }

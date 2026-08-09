@@ -15,7 +15,7 @@ namespace gr4cp::domain {
 
 namespace {
 
-std::optional<std::string> value_to_string(const gr::pmt::Value& value) {
+std::optional<std::string> value_as_string(const gr::pmt::Value& value) {
     std::optional<std::string> result;
     gr::pmt::ValueVisitor([&result](const auto& item) {
         using T = std::decay_t<decltype(item)>;
@@ -77,7 +77,7 @@ std::optional<std::string> parameter_string(const gr::property_map& parameters, 
     if (it == parameters.end()) {
         return std::nullopt;
     }
-    return value_to_string(it->second);
+    return value_as_string(it->second);
 }
 
 AuthoredStreamIntent normalize_stream_intent(const gr::property_map& parameters) {
@@ -103,21 +103,21 @@ AuthoredStreamIntent normalize_stream_intent(const gr::property_map& parameters)
 std::optional<NormalizedBlock> normalize_stream_block(const gr::property_map& block) {
     std::optional<std::string> studio_node_id;
     if (const auto it = block.find("id"); it != block.end()) {
-        studio_node_id = value_to_string(it->second);
+        studio_node_id = value_as_string(it->second);
     }
 
     std::optional<std::string> block_type_id;
     if (const auto it = block.find("block"); it != block.end()) {
-        block_type_id = value_to_string(it->second);
+        block_type_id = value_as_string(it->second);
     }
     if (!block_type_id.has_value()) {
         if (const auto it = block.find("id"); it != block.end()) {
-            block_type_id = value_to_string(it->second);
+            block_type_id = value_as_string(it->second);
         }
     }
     if (!block_type_id.has_value()) {
         if (const auto it = block.find("block_type"); it != block.end()) {
-            block_type_id = value_to_string(it->second);
+            block_type_id = value_as_string(it->second);
         }
     }
     if (!block_type_id.has_value() || block_type_id->empty()) {
@@ -142,7 +142,7 @@ std::optional<NormalizedBlock> normalize_stream_block(const gr::property_map& bl
 
     std::optional<std::string> instance_name;
     if (const auto it = parameters.find("name"); it != parameters.end()) {
-        instance_name = value_to_string(it->second);
+        instance_name = value_as_string(it->second);
     }
     if ((!instance_name.has_value() || instance_name->empty()) && studio_node_id.has_value() && !studio_node_id->empty() &&
         block.contains("block")) {
@@ -154,7 +154,7 @@ std::optional<NormalizedBlock> normalize_stream_block(const gr::property_map& bl
             if (it == block.end()) {
                 continue;
             }
-            instance_name = value_to_string(it->second);
+            instance_name = value_as_string(it->second);
             if (instance_name.has_value() && !instance_name->empty()) {
                 break;
             }
