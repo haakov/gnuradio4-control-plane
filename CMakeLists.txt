@@ -39,16 +39,34 @@ if((CMAKE_GENERATOR STREQUAL "Ninja" OR (CCACHE_PROGRAM AND USE_CCACHE)) AND NOT
     set(CMAKE_COLOR_DIAGNOSTICS ON)
 endif()
 
-find_package(nlohmann_json CONFIG REQUIRED)
-find_package(Threads REQUIRED)
-set(Boost_NO_BOOST_CMAKE ON)
-find_package(Boost REQUIRED)
-if(TARGET Boost::headers)
-    set(GR4CP_BOOST_HEADERS_TARGET Boost::headers)
-elseif(TARGET Boost::boost)
-    set(GR4CP_BOOST_HEADERS_TARGET Boost::boost)
+if(EMSCRIPTEN)
+    message(STATUS "Fetch nlohmann/json...")
+    include(FetchContent)
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    set(JSON_Install OFF CACHE INTERNAL "")
+    FetchContent_Declare(nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.12.0
+        GIT_SHALLOW TRUE
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+    message(STATUS "nlohmann/json fetched.")
 else()
-    message(FATAL_ERROR "Boost headers target was not provided by find_package(Boost)")
+    find_package(nlohmann_json CONFIG REQUIRED)
+endif()
+find_package(Threads REQUIRED)
+
+if(NOT EMSCRIPTEN)
+    set(Boost_NO_BOOST_CMAKE ON)
+    find_package(Boost REQUIRED)
+    if(TARGET Boost::headers)
+        set(GR4CP_BOOST_HEADERS_TARGET Boost::headers)
+    elseif(TARGET Boost::boost)
+        set(GR4CP_BOOST_HEADERS_TARGET Boost::boost)
+    else()
+        message(FATAL_ERROR "Boost headers target was not provided by find_package(Boost)")
+    endif()
 endif()
 find_package(ZLIB REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -138,7 +156,6 @@ add_library(gr4cp_core
     src/app/block_catalog_service.cpp
     src/app/scheduler_catalog_service.cpp
     src/app/session_stream_service.cpp
-    src/api/http_server.cpp
     src/catalog/static_block_catalog_provider.cpp
     src/domain/block_catalog.cpp
     src/domain/scheduler_catalog.cpp
@@ -150,6 +167,14 @@ add_library(gr4cp_core
     src/runtime/stub_runtime_manager.cpp
     src/storage/in_memory_session_repository.cpp
 )
+
+if(NOT EMSCRIPTEN)
+    # cpp-httplib and Boost.Beast both need real sockets, so the HTTP transport is native-only.
+    target_sources(gr4cp_core PRIVATE src/api/http_server.cpp)
+else()
+    # WASM talks to gnuradio4-studio in-process through this dispatcher instead.
+    target_sources(gr4cp_core PRIVATE src/api/wasm_api.cpp)
+endif()
 
 if(GR4CP_HAVE_GNURADIO4)
     target_sources(gr4cp_core
@@ -235,14 +260,38 @@ if(NOT EMSCRIPTEN)
     endif()
 endif()
 
-add_executable(gr4cp_server
-    src/main.cpp
-)
+if(NOT EMSCRIPTEN)
+    add_executable(gr4cp_server
+        src/main.cpp
+    )
 
-target_link_libraries(gr4cp_server
-    PRIVATE
-        gr4cp_core
-)
+    target_link_libraries(gr4cp_server
+        PRIVATE
+            gr4cp_core
+    )
+else()
+    # gnuradio4-studio loads this module and calls Module.handleRequest() directly; there is no
+    # listening socket, so src/main.cpp (which drives HttpServer) has no WASM counterpart.
+    add_executable(gr4cp_wasm
+        src/wasm_main.cpp
+    )
+
+    target_link_libraries(gr4cp_wasm
+        PRIVATE
+            gr4cp_core
+            embind
+    )
+
+    # ES6 module output so the studio's bundler can import the glue code directly.
+    target_link_options(gr4cp_wasm
+        PRIVATE
+            "-sMODULARIZE=1"
+            "-sEXPORT_ES6=1"
+            "-sEXPORT_NAME=createGr4cpModule"
+    )
+
+    set_target_properties(gr4cp_wasm PROPERTIES SUFFIX ".mjs")
+endif()
 
 if(NOT EMSCRIPTEN)
     add_executable(gr4cp_cli_exec
@@ -278,64 +327,66 @@ if(ENABLE_TESTING)
 find_package(GTest CONFIG REQUIRED)
 enable_testing()
 
-add_executable(gr4cp_smoke_test
-    test/healthz_smoke_test.cpp
-)
-
-target_link_libraries(gr4cp_smoke_test
-    PRIVATE
-        gr4cp_core
-        GTest::gtest_main
-        Threads::Threads
-)
-
-include(GoogleTest)
-if(GR4CP_HAVE_GNURADIO4)
-    gtest_discover_tests(gr4cp_smoke_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
-else()
-    gtest_discover_tests(gr4cp_smoke_test)
-endif()
-
-add_executable(gr4cp_core_test
-    test/block_settings_service_test.cpp
-    test/session_service_test.cpp
-    test/session_stream_service_test.cpp
-    test/block_catalog_service_test.cpp
-    test/gr4_block_catalog_provider_test.cpp
-    test/gr4_runtime_manager_test.cpp
-)
-
-target_link_libraries(gr4cp_core_test
-    PRIVATE
-        gr4cp_core
-        GTest::gtest_main
-        Threads::Threads
-)
-
-if(GR4CP_HAVE_GNURADIO4)
-    gtest_discover_tests(gr4cp_core_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
-else()
-    gtest_discover_tests(gr4cp_core_test)
-endif()
-
-add_executable(gr4cp_http_test
-    test/http_api_test.cpp
-)
-
-target_link_libraries(gr4cp_http_test
-    PRIVATE
-        gr4cp_core
-        GTest::gtest_main
-        Threads::Threads
-)
-
-if(GR4CP_HAVE_GNURADIO4)
-    gtest_discover_tests(gr4cp_http_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
-else()
-    gtest_discover_tests(gr4cp_http_test)
-endif()
-
 if(NOT EMSCRIPTEN)
+    add_executable(gr4cp_smoke_test
+        test/healthz_smoke_test.cpp
+    )
+
+    target_link_libraries(gr4cp_smoke_test
+        PRIVATE
+            gr4cp_core
+            GTest::gtest_main
+            Threads::Threads
+    )
+
+    include(GoogleTest)
+    if(GR4CP_HAVE_GNURADIO4)
+        gtest_discover_tests(gr4cp_smoke_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
+    else()
+        gtest_discover_tests(gr4cp_smoke_test)
+    endif()
+
+
+    add_executable(gr4cp_core_test
+        test/block_settings_service_test.cpp
+        test/session_service_test.cpp
+        test/session_stream_service_test.cpp
+        test/block_catalog_service_test.cpp
+        test/gr4_block_catalog_provider_test.cpp
+        test/gr4_runtime_manager_test.cpp
+    )
+
+    target_link_libraries(gr4cp_core_test
+        PRIVATE
+            gr4cp_core
+            GTest::gtest_main
+            Threads::Threads
+    )
+
+    if(GR4CP_HAVE_GNURADIO4)
+        gtest_discover_tests(gr4cp_core_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
+    else()
+        gtest_discover_tests(gr4cp_core_test)
+    endif()
+
+    add_executable(gr4cp_http_test
+        test/http_api_test.cpp
+    )
+
+
+    target_link_libraries(gr4cp_http_test
+        PRIVATE
+            gr4cp_core
+            GTest::gtest_main
+            Threads::Threads
+    )
+
+    if(GR4CP_HAVE_GNURADIO4)
+        gtest_discover_tests(gr4cp_http_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
+    else()
+        gtest_discover_tests(gr4cp_http_test)
+    endif()
+
     add_executable(gr4cp_cli_test
         test/cli_test.cpp
     )
