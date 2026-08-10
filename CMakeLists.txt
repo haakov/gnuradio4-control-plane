@@ -52,38 +52,41 @@ else()
 endif()
 find_package(ZLIB REQUIRED)
 find_package(PkgConfig REQUIRED)
-find_package(httplib CONFIG QUIET)
-set(GR4CP_HTTPLIB_EXTRA_TARGETS "")
-if(httplib_FOUND)
-    set(GR4CP_HTTPLIB_TARGET httplib::httplib)
-else()
-    pkg_check_modules(CPPHTTPLIB QUIET IMPORTED_TARGET cpp-httplib)
-    if(TARGET PkgConfig::CPPHTTPLIB)
-        set(GR4CP_HTTPLIB_TARGET PkgConfig::CPPHTTPLIB)
-        pkg_check_modules(CPPHTTPLIB_OPENSSL REQUIRED IMPORTED_TARGET openssl)
-        pkg_check_modules(CPPHTTPLIB_BROTLICOMMON REQUIRED IMPORTED_TARGET libbrotlicommon)
-        pkg_check_modules(CPPHTTPLIB_BROTLIDEC REQUIRED IMPORTED_TARGET libbrotlidec)
-        pkg_check_modules(CPPHTTPLIB_BROTLIENC REQUIRED IMPORTED_TARGET libbrotlienc)
-        list(APPEND GR4CP_HTTPLIB_EXTRA_TARGETS
-            PkgConfig::CPPHTTPLIB_OPENSSL
-            PkgConfig::CPPHTTPLIB_BROTLICOMMON
-            PkgConfig::CPPHTTPLIB_BROTLIDEC
-            PkgConfig::CPPHTTPLIB_BROTLIENC
-        )
+
+if(NOT EMSCRIPTEN)
+    find_package(httplib CONFIG QUIET)
+    set(GR4CP_HTTPLIB_EXTRA_TARGETS "")
+    if(httplib_FOUND)
+        set(GR4CP_HTTPLIB_TARGET httplib::httplib)
     else()
-        find_path(GR4CP_CPPHTTPLIB_INCLUDE_DIR
-            NAMES httplib.h
-            PATH_SUFFIXES include
-        )
+        pkg_check_modules(CPPHTTPLIB QUIET IMPORTED_TARGET cpp-httplib)
+        if(TARGET PkgConfig::CPPHTTPLIB)
+            set(GR4CP_HTTPLIB_TARGET PkgConfig::CPPHTTPLIB)
+            pkg_check_modules(CPPHTTPLIB_OPENSSL REQUIRED IMPORTED_TARGET openssl)
+            pkg_check_modules(CPPHTTPLIB_BROTLICOMMON REQUIRED IMPORTED_TARGET libbrotlicommon)
+            pkg_check_modules(CPPHTTPLIB_BROTLIDEC REQUIRED IMPORTED_TARGET libbrotlidec)
+            pkg_check_modules(CPPHTTPLIB_BROTLIENC REQUIRED IMPORTED_TARGET libbrotlienc)
+            list(APPEND GR4CP_HTTPLIB_EXTRA_TARGETS
+                PkgConfig::CPPHTTPLIB_OPENSSL
+                PkgConfig::CPPHTTPLIB_BROTLICOMMON
+                PkgConfig::CPPHTTPLIB_BROTLIDEC
+                PkgConfig::CPPHTTPLIB_BROTLIENC
+            )
+        else()
+            find_path(GR4CP_CPPHTTPLIB_INCLUDE_DIR
+                NAMES httplib.h
+                PATH_SUFFIXES include
+            )
 
-        if(NOT GR4CP_CPPHTTPLIB_INCLUDE_DIR)
-            message(FATAL_ERROR "Could not find cpp-httplib. Install it with a CMake package config, a pkg-config module, or ensure httplib.h is visible to CMake.")
+            if(NOT GR4CP_CPPHTTPLIB_INCLUDE_DIR)
+                message(FATAL_ERROR "Could not find cpp-httplib. Install it with a CMake package config, a pkg-config module, or ensure httplib.h is visible to CMake.")
+            endif()
+
+            add_library(gr4cp_cpp_httplib INTERFACE)
+            add_library(gr4cp::cpp_httplib ALIAS gr4cp_cpp_httplib)
+            target_include_directories(gr4cp_cpp_httplib INTERFACE "${GR4CP_CPPHTTPLIB_INCLUDE_DIR}")
+            set(GR4CP_HTTPLIB_TARGET gr4cp::cpp_httplib)
         endif()
-
-        add_library(gr4cp_cpp_httplib INTERFACE)
-        add_library(gr4cp::cpp_httplib ALIAS gr4cp_cpp_httplib)
-        target_include_directories(gr4cp_cpp_httplib INTERFACE "${GR4CP_CPPHTTPLIB_INCLUDE_DIR}")
-        set(GR4CP_HTTPLIB_TARGET gr4cp::cpp_httplib)
     endif()
 endif()
 
@@ -180,14 +183,23 @@ target_include_directories(gr4cp_core
         include
 )
 
-target_link_libraries(gr4cp_core
-    PUBLIC
-        ${GR4CP_BOOST_HEADERS_TARGET}
-        ${GR4CP_HTTPLIB_TARGET}
-        ${GR4CP_HTTPLIB_EXTRA_TARGETS}
-        ZLIB::ZLIB
-        nlohmann_json::nlohmann_json
-)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(gr4cp_core
+        PUBLIC
+            ${GR4CP_BOOST_HEADERS_TARGET}
+            ${GR4CP_HTTPLIB_TARGET}
+            ${GR4CP_HTTPLIB_EXTRA_TARGETS}
+            ZLIB::ZLIB
+            nlohmann_json::nlohmann_json
+    )
+else()
+    target_link_libraries(gr4cp_core
+        PUBLIC
+            ${GR4CP_BOOST_HEADERS_TARGET}
+            ZLIB::ZLIB
+            nlohmann_json::nlohmann_json
+    )
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(gr4cp_core
@@ -196,29 +208,31 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
-add_library(gr4cp_cli
-    src/cli/cli.cpp
-)
+if(NOT EMSCRIPTEN)
+    add_library(gr4cp_cli
+        src/cli/cli.cpp
+    )
 
-target_include_directories(gr4cp_cli
-    PUBLIC
-        include
-)
+    target_include_directories(gr4cp_cli
+        PUBLIC
+            include
+    )
 
-target_link_libraries(gr4cp_cli
-    PUBLIC
-        ${GR4CP_BOOST_HEADERS_TARGET}
-        ${GR4CP_HTTPLIB_TARGET}
-        ${GR4CP_HTTPLIB_EXTRA_TARGETS}
-        ZLIB::ZLIB
-        nlohmann_json::nlohmann_json
-)
-
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_libraries(gr4cp_cli
         PUBLIC
-            stdc++exp
+            ${GR4CP_BOOST_HEADERS_TARGET}
+            ${GR4CP_HTTPLIB_TARGET}
+            ${GR4CP_HTTPLIB_EXTRA_TARGETS}
+            ZLIB::ZLIB
+            nlohmann_json::nlohmann_json
     )
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(gr4cp_cli
+            PUBLIC
+                stdc++exp
+        )
+    endif()
 endif()
 
 add_executable(gr4cp_server
@@ -230,33 +244,35 @@ target_link_libraries(gr4cp_server
         gr4cp_core
 )
 
-add_executable(gr4cp_cli_exec
-    src/cli_main.cpp
-)
-
-set_target_properties(gr4cp_cli_exec PROPERTIES OUTPUT_NAME gr4cp-cli)
-
-if(APPLE)
-    set(_gr4cp_executable_install_rpath "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
-    set(_gr4cp_library_install_rpath "@loader_path")
-elseif(UNIX)
-    set(_gr4cp_executable_install_rpath "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
-    set(_gr4cp_library_install_rpath "\$ORIGIN")
-endif()
-
-if(DEFINED _gr4cp_executable_install_rpath)
-    set_target_properties(gr4cp_server gr4cp_cli_exec PROPERTIES
-        INSTALL_RPATH "${_gr4cp_executable_install_rpath}"
+if(NOT EMSCRIPTEN)
+    add_executable(gr4cp_cli_exec
+        src/cli_main.cpp
     )
-    set_target_properties(gr4cp_core gr4cp_cli PROPERTIES
-        INSTALL_RPATH "${_gr4cp_library_install_rpath}"
+
+    set_target_properties(gr4cp_cli_exec PROPERTIES OUTPUT_NAME gr4cp-cli)
+
+    if(APPLE)
+        set(_gr4cp_executable_install_rpath "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+        set(_gr4cp_library_install_rpath "@loader_path")
+    elseif(UNIX)
+        set(_gr4cp_executable_install_rpath "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+        set(_gr4cp_library_install_rpath "\$ORIGIN")
+    endif()
+
+    if(DEFINED _gr4cp_executable_install_rpath)
+        set_target_properties(gr4cp_server gr4cp_cli_exec PROPERTIES
+            INSTALL_RPATH "${_gr4cp_executable_install_rpath}"
+        )
+        set_target_properties(gr4cp_core gr4cp_cli PROPERTIES
+            INSTALL_RPATH "${_gr4cp_library_install_rpath}"
+        )
+    endif()
+
+    target_link_libraries(gr4cp_cli_exec
+        PRIVATE
+            gr4cp_cli
     )
 endif()
-
-target_link_libraries(gr4cp_cli_exec
-    PRIVATE
-        gr4cp_cli
-)
 
 if(ENABLE_TESTING)
 find_package(GTest CONFIG REQUIRED)
@@ -319,27 +335,33 @@ else()
     gtest_discover_tests(gr4cp_http_test)
 endif()
 
-add_executable(gr4cp_cli_test
-    test/cli_test.cpp
-)
+if(NOT EMSCRIPTEN)
+    add_executable(gr4cp_cli_test
+        test/cli_test.cpp
+    )
 
-target_link_libraries(gr4cp_cli_test
-    PRIVATE
-        gr4cp_cli
-        gr4cp_core
-        GTest::gtest_main
-        Threads::Threads
-)
+    target_link_libraries(gr4cp_cli_test
+        PRIVATE
+            gr4cp_cli
+            gr4cp_core
+            GTest::gtest_main
+            Threads::Threads
+    )
 
-target_compile_definitions(gr4cp_cli_test
-    PRIVATE
-        GR4CP_CLI_EXECUTABLE="$<TARGET_FILE:gr4cp_cli_exec>"
-)
+    target_compile_definitions(gr4cp_cli_test
+        PRIVATE
+            GR4CP_CLI_EXECUTABLE="$<TARGET_FILE:gr4cp_cli_exec>"
+    )
 
-if(GR4CP_HAVE_GNURADIO4)
-    gtest_discover_tests(gr4cp_cli_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
-else()
-    gtest_discover_tests(gr4cp_cli_test)
+    if(GR4CP_HAVE_GNURADIO4)
+        gtest_discover_tests(gr4cp_cli_test PROPERTIES ENVIRONMENT "${_gr4cp_test_env}")
+    else()
+        gtest_discover_tests(gr4cp_cli_test)
+    endif()
+
+    install(TARGETS gr4cp_server gr4cp_cli_exec
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 endif()
 endif()
 
