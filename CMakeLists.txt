@@ -275,6 +275,32 @@ else()
     add_executable(gr4cp_wasm
         src/wasm_main.cpp
     )
+    set(GR4CP_WASM_BLOCK_LIBRARIES "GrFourierBlocks;GrHttpBlocks;Gr4StudioBlocks;GrBasicBlocks" CACHE STRING
+        "gnuradio4 block libraries statically linked into the WASM module")
+
+    set(GR4CP_WASM_BLOCK_INCLUDES "")
+    set(GR4CP_WASM_BLOCK_CALLS "")
+    foreach(_gr4cp_block_library IN LISTS GR4CP_WASM_BLOCK_LIBRARIES)
+        set(_gr4cp_block_archive
+            "${GR4CP_GNURADIO4_LIB_DIR}/gnuradio-4/plugins/${CMAKE_STATIC_LIBRARY_PREFIX}${_gr4cp_block_library}Static${CMAKE_STATIC_LIBRARY_SUFFIX}")
+        if(NOT EXISTS "${_gr4cp_block_archive}")
+            message(FATAL_ERROR
+                "GR4CP_WASM_BLOCK_LIBRARIES names ${_gr4cp_block_library}, but ${_gr4cp_block_archive} "
+                "does not exist. Build that block library with MAKE_STATIC_LIBRARY and install it.")
+        endif()
+        target_link_libraries(gr4cp_wasm PRIVATE "${_gr4cp_block_archive}")
+        string(APPEND GR4CP_WASM_BLOCK_INCLUDES
+            "#include <gnuradio-4.0/${_gr4cp_block_library}.hpp>\n")
+        string(APPEND GR4CP_WASM_BLOCK_CALLS
+            "    (void)gr::blocklib::init${_gr4cp_block_library}(gr::globalBlockRegistry());\n")
+    endforeach()
+
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wasm_block_registration.hpp.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/gr4cp/wasm_block_registration.hpp"
+        @ONLY
+    )
+    target_include_directories(gr4cp_wasm PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
     target_link_libraries(gr4cp_wasm
         PRIVATE
@@ -282,7 +308,6 @@ else()
             embind
     )
 
-    # ES6 module output so the studio's bundler can import the glue code directly.
     target_link_options(gr4cp_wasm
         PRIVATE
             "-sMODULARIZE=1"
@@ -324,7 +349,10 @@ if(NOT EMSCRIPTEN)
 endif()
 
 if(ENABLE_TESTING)
-find_package(GTest CONFIG REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(GTest CONFIG REQUIRED)
+endif()
+
 enable_testing()
 
 if(NOT EMSCRIPTEN)
@@ -413,14 +441,14 @@ if(NOT EMSCRIPTEN)
     install(TARGETS gr4cp_server gr4cp_cli_exec
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
-endif()
-endif()
 
 install(TARGETS gr4cp_core gr4cp_cli gr4cp_server gr4cp_cli_exec
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+endif()
+endif()
 
 install(DIRECTORY include/gr4cp/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gr4cp

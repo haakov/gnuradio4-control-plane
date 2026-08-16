@@ -7,6 +7,9 @@
 #include "gr4cp/catalog/gr4_scheduler_catalog_provider.hpp"
 #include "gr4cp/runtime/gr4_runtime_manager.hpp"
 #include "gr4cp/storage/in_memory_session_repository.hpp"
+
+// Generated from GR4CP_WASM_BLOCK_LIBRARIES; see cmake/wasm_block_registration.hpp.in.
+#include "gr4cp/wasm_block_registration.hpp"
 #endif
 
 #include <emscripten/bind.h>
@@ -37,6 +40,10 @@ struct ControlPlane {
 };
 
 ControlPlane& control_plane() {
+    [[maybe_unused]] static const bool blocks_registered = [] {
+        gr4cp::wasm::register_linked_blocks();
+        return true;
+    }();
     static ControlPlane instance;
     return instance;
 }
@@ -56,8 +63,6 @@ WasmResponse handle_request(const std::string&, const std::string&, const std::s
 
 #endif
 
-// Warms the catalogs up front so the studio can surface load failures during startup rather than
-// on the first /blocks request.
 WasmResponse initialize() {
     return handle_request("GET", "/healthz", "");
 }
@@ -74,8 +79,7 @@ EMSCRIPTEN_BINDINGS(gr4cp_control_plane) {
     emscripten::function("initialize", &initialize);
 }
 
-// The runtime stays alive after main returns (EXIT_RUNTIME defaults to 0), so this only exists to
-// give the generated module a conventional entry point.
+// This exists only to give the generated module a conventional entry point
 int main() {
     return 0;
 }

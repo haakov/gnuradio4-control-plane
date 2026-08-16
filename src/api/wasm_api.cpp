@@ -441,13 +441,15 @@ WasmResponse WasmApi::dispatch(const std::string& method, const std::string& tar
                 return WasmResponse{stream_response.status, stream_response.content_type, stream_response.body};
             }
             if (std::regex_match(path, matches, session_ws_stream_route())) {
-                // Validates the stream so callers get the same 404/409 diagnostics as over HTTP.
-                (void)session_service_.resolve_websocket_stream(matches[1].str(),
-                                                                decode_percent_encoded(matches[2].str()));
-                return error_response(501,
-                                      "not_implemented",
-                                      "websocket streams are not available in the in-process WASM API; "
-                                      "poll the /http stream endpoint instead");
+                const auto route = session_service_.resolve_websocket_stream(matches[1].str(),
+                                                                             decode_percent_encoded(matches[2].str()));
+                return json_response(Json{
+                    {"transport", "wasm_in_process"},
+                    {"host", route.internal.host},
+                    {"port", route.internal.port},
+                    {"path", route.internal.path},
+                    {"endpoint", route.internal.endpoint},
+                });
             }
             if (std::regex_match(path, matches, session_settings_route())) {
                 return json_response(Json{{"settings",
