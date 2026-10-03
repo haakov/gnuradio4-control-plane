@@ -79,6 +79,14 @@ jobs:
             cxx_flags: -fsanitize=address -Wno-error=deprecated-declarations
             linker_flags: -fsanitize=address
             asan_options: detect_leaks=0
+          - name: Ubuntu 24.04 | Emscripten | Release
+            blocks_sdk_tag: main-ubuntu-24.04-emscripten-release
+            cxx: em++
+            cmake_wrapper: emcmake
+            cmake_build_type: Release
+            cxx_flags: ""
+            linker_flags: ""
+            asan_options: ""
     container:
       image: ghcr.io/${{ github.repository_owner }}/gnuradio4-blocks-sdk:${{ matrix.blocks_sdk_tag }}
 
@@ -92,6 +100,7 @@ jobs:
           fetch-depth: 0
 
       - name: Configure
+        if: matrix.cmake_wrapper == null
         shell: bash
         env:
           CMAKE_OPTIONS: ${{ inputs.cmake_options }}
@@ -121,10 +130,58 @@ jobs:
           fi
           cmake "${cmake_args[@]}"
 
+      - name: Check out gnuradio4-studio
+        if: matrix.cmake_wrapper == 'emcmake'
+        uses: actions/checkout@v6
+        with:
+          repository: gnuradio/gnuradio4-studio
+          path: gnuradio4-studio
+
+      - name: Build and install Studio blocks (Emscripten)
+        if: matrix.cmake_wrapper == 'emcmake'
+        shell: bash
+        env:
+          PKG_CONFIG_PATH: /opt/gnuradio4/lib/pkgconfig:/opt/gnuradio4/lib64/pkgconfig:/opt/gnuradio4/share/pkgconfig
+        run: |
+          if ! command -v pkg-config >/dev/null; then
+            apt-get update && apt-get install -y --no-install-recommends pkg-config
+          fi
+          system_node="$(command -v node)"
+          emcmake cmake -S gnuradio4-studio/blocks -B ../build-studio-blocks \
+            -DCMAKE_COLOR_DIAGNOSTICS=ON \
+            -DCMAKE_PREFIX_PATH=/opt/gnuradio4 \
+            -DCMAKE_FIND_ROOT_PATH=/opt/gnuradio4 \
+            -DCMAKE_CROSSCOMPILING_EMULATOR="${system_node}" \
+            -DCMAKE_INSTALL_PREFIX=/opt/gnuradio4 \
+            -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }}
+          cmake --build ../build-studio-blocks --parallel 4
+          cmake --install ../build-studio-blocks
+
+      - name: Configure CMake Emscripten
+        if: matrix.cmake_wrapper == 'emcmake'
+        shell: bash
+        run: |
+          system_node="$(command -v node)"
+          emcmake cmake -S . -B ../build \
+            -DCMAKE_COLOR_DIAGNOSTICS=ON \
+            -DCMAKE_PREFIX_PATH=/opt/gnuradio4 \
+            -DCMAKE_FIND_ROOT_PATH=/opt/gnuradio4 \
+            -DGR4CP_GNURADIO4_PREFIX=/opt/gnuradio4 \
+            -DCMAKE_CROSSCOMPILING_EMULATOR="${system_node}" \
+            -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
       - name: Build
         run: cmake --build ../build --parallel 4
 
+      - name: Verify WASM module
+        if: matrix.cmake_wrapper == 'emcmake'
+        run: |
+          test -s ../build/gr4cp_wasm.mjs
+          test -s ../build/gr4cp_wasm.wasm
+
       - name: Execute tests
+        if: matrix.cmake_wrapper == null
         env:
           ASAN_OPTIONS: ${{ matrix.asan_options }}
         run: ctest --test-dir ../build --output-on-failure

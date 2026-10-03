@@ -70,8 +70,10 @@ if(NOT EMSCRIPTEN)
         message(FATAL_ERROR "Boost headers target was not provided by find_package(Boost)")
     endif()
 endif()
-find_package(ZLIB REQUIRED)
-find_package(PkgConfig REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(ZLIB REQUIRED)
+    find_package(PkgConfig REQUIRED)
+endif()
 
 if(NOT EMSCRIPTEN)
     find_package(httplib CONFIG QUIET)
@@ -231,7 +233,6 @@ else()
     target_link_libraries(gr4cp_core
         PUBLIC
             ${GR4CP_BOOST_HEADERS_TARGET}
-            ZLIB::ZLIB
             nlohmann_json::nlohmann_json
     )
 endif()
